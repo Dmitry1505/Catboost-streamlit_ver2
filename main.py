@@ -4,9 +4,9 @@ from catboost import CatBoostClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 import plotly.express as px
-import plotly.graph_objects as go
 import time
 import os
+import io
 
 # Функция для загрузки данных
 def load_data(uploaded_file):
@@ -21,7 +21,7 @@ def load_data(uploaded_file):
     return df
 
 # Функция для обучения модели
-def train_model(df, features, target_column, test_size=0.2, iterations=1000, learning_rate=0.1, depth=6, l2_leaf_reg=3.0):
+def train_model(df, features, target_column, categorical_features, test_size=0.2, iterations=1000, learning_rate=0.1, depth=6, l2_leaf_reg=3.0):
     X = df[features]
     y = df[target_column]
 
@@ -49,7 +49,8 @@ def train_model(df, features, target_column, test_size=0.2, iterations=1000, lea
     # Измеряем время начала обучения
     start_time = time.time()
 
-    model.fit(X_train, y_train, eval_set=(X_test, y_test), plot=True)
+    # Передаем категориальные признаки в модель
+    model.fit(X_train, y_train, eval_set=(X_test, y_test), cat_features=categorical_features, plot=True)
 
     # Измеряем время конца обучения
     end_time = time.time()
@@ -89,14 +90,17 @@ def main():
                 target_column = st.selectbox("Select target column", options=all_columns)
                 feature_columns = st.multiselect("Select feature columns", options=all_columns, default=[col for col in all_columns if col != target_column])
 
+                # Автоматическое определение категориальных признаков
+                categorical_features = st.multiselect("Select categorical features", options=feature_columns, default=[col for col in feature_columns if df[col].dtype == 'object'])
+
                 test_size = st.slider("Test size", min_value=0.1, max_value=0.5, value=0.2, step=0.1)
-                iterations = st.slider("Iterations", min_value=100, max_value=1000, value=1000, step=100)
+                iterations = st.slider("Iterations", min_value=10, max_value=1000, value=1000, step=10)
                 learning_rate = st.slider("Learning rate", min_value=0.01, max_value=1.0, value=0.1, step=0.01)
                 depth = st.slider("Depth", min_value=1, max_value=10, value=6, step=1)
                 l2_leaf_reg = st.slider("L2 regularization (l2_leaf_reg)", min_value=0.0, max_value=10.0, value=3.0, step=0.1)
 
                 if st.button("Train Model"):
-                    model, accuracy, evals_result, feature_importances, eval_metric, training_time = train_model(df, feature_columns, target_column, test_size, iterations, learning_rate, depth, l2_leaf_reg)
+                    model, accuracy, evals_result, feature_importances, eval_metric, training_time = train_model(df, feature_columns, target_column, categorical_features, test_size, iterations, learning_rate, depth, l2_leaf_reg)
                     st.write(f"Model Accuracy: {accuracy}")
                     st.write(f"Training Time: {training_time:.2f} seconds")
 
@@ -154,8 +158,15 @@ def main():
                     st.write("Predictions:")
                     st.write(prediction_data)
 
-                    prediction_data.to_csv("predictions.csv", index=False)
-                    st.success("Predictions saved to predictions.csv")
+                    # Сохранение предсказаний в разные форматы
+                    csv_data = prediction_data.to_csv(index=False).encode('utf-8')
+                    xls_buffer = io.BytesIO()
+                    prediction_data.to_excel(xls_buffer, index=False, engine='xlsxwriter')
+                    xlsx_data = xls_buffer.getvalue()
+
+                    st.download_button(label="Download Predictions as CSV", data=csv_data, file_name="predictions.csv", mime='text/csv')
+                    st.download_button(label="Download Predictions as XLS", data=xlsx_data, file_name="predictions.xls", mime='application/vnd.ms-excel')
+                    st.download_button(label="Download Predictions as XLSX", data=xlsx_data, file_name="predictions.xlsx", mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 if __name__ == "__main__":
     main()
